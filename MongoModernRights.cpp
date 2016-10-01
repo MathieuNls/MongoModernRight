@@ -28,38 +28,131 @@ using namespace web::experimental::web_sockets::client;     // WebSockets client
 using namespace web::json;                                  // JSON library
 
 using namespace std;
-
 #define TRACE(msg)            wcout << msg
-#define TRACE_ACTION(a, k, v) wcout << a << L" (" << k << L", " << v << L")\n"
 
-map<utility::string_t, utility::string_t> dictionary;
+http_client dbclient(U("http://192.168.99.100:32769/"));
 
-void handle_get(http_request request);
 
-int main()
+void display_field_map_json(const json::value & jvalue, std::string tab = "")
 {
-	http_listener listener(L"http://localhost:8181/restdemo");
+	if (!jvalue.is_null())
+	{
+		for (auto const & e : jvalue.as_object())
+		{
 
-	listener.support(methods::GET, handle_get);
+			if (e.second.is_object()){
+				wcout << e.first << L" : {" << endl;
+				display_field_map_json(e.second, tab + "  ");
+				wcout << L"}" << endl;
+			}
+			else {
+				wcout << tab.c_str() << e.first << L" : " << e.second << endl;
+			}
+		}
+	}
+}
+
+
+
+pplx::task<http_response> make_task_request(http_client & client,method mtd,json::value const & jvalue)
+{
+	display_field_map_json(jvalue);
+	http_request request(mtd);
+	request.headers().add(L"Accept", L"application/json");
+	request.set_request_uri(L"/");
+	return client.request(request);
+}
+
+void make_request(http_client & client, method mtd, json::value const & jvalue, http_request & request)
+{
+	make_task_request(client, mtd, jvalue)
+	.then([](http_response response)
+	{
+		if (response.status_code() == status_codes::OK)
+		{
+			return response.extract_json();
+		}
+		return pplx::task_from_result(json::value());
+	})
+	.then([request](pplx::task<json::value> previousTask)
+	{
+		try
+		{
+			display_field_map_json(previousTask.get());
+			request.reply(status_codes::OK, previousTask.get());
+		}
+		catch (http_exception const & e)
+		{
+			wcout << e.what() << endl;
+		}
+	})
+	.wait();
+}
+
+void handle_get(http_request & request)
+{
+	TRACE(L"\nRECEIVED");
+	make_request(dbclient, methods::GET, json::value::null(), request);
+}
+
+void handle_request(http_request request,
+	function<void(json::value &)> action)
+{
+
+	request
+		.extract_json()
+		.then([&action](pplx::task<json::value> task) {
+		try
+		{
+			auto & jvalue = task.get();
+
+			if (!jvalue.is_null())
+			{
+				action(jvalue);
+			}
+		}
+		catch (http_exception const & e)
+		{
+			wcout << e.what() << endl;
+		}
+	})
+	.wait();
+
+}
+
+void handle_post(http_request request)
+{
+
+	TRACE("\nhandle POST\n");
 
 	try
 	{
+		json::value obj = request.extract_json(true).get();
+		obj[L"owner_id"] = json::value::string(L"35092_35092_353");
+		display_field_map_json(obj);
+	}
+	catch (json_exception const & e)
+	{
+		wcout << e.what() << endl;
+	}
+}
+
+
+int main()
+{
+	http_listener listener(L"http://localhost:8181/");
+
+	listener.support(methods::GET, handle_get);
+	listener.support(methods::POST, handle_post);
+
+
 		listener
 			.open()
 			.then([&listener]() {TRACE(L"\nstarting to listen\n"); })
 			.wait();
 
 		while (true);
-	}
-	catch (exception const & e)
-	{
-		wcout << e.what() << endl;
-	}
+	
 
 	return 0;
-}
-void handle_get(http_request request)
-{
-	json::value obj = json::value::parse(U("{ \"a\" : 10 }"));
-	request.reply(status_codes::OK, obj);
 }
