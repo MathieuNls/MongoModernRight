@@ -1,0 +1,14 @@
+{
+  "host": "http://localhost:8181/",
+  "db_host": "http://192.168.99.100:32769",
+  "schema": {
+    "email": {
+      "type": "string",
+      "limit": 65
+    },
+    "password": {
+      "type": "string",
+      "limit": 65
+    }
+  }
+}

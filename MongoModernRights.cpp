@@ -4,6 +4,8 @@
 #include <map>
 #include <set>
 #include <string>
+#include <fstream>
+#include <streambuf>
 
 #include <cpprest/http_client.h>
 #include <cpprest/filestream.h>
@@ -30,6 +32,8 @@ using namespace web::json;                                  // JSON library
 using namespace std;
 #define TRACE(msg)            wcout << msg
 
+
+json::value config;
 http_client dbclient(U("http://192.168.99.100:32769/"));
 
 
@@ -137,13 +141,48 @@ void handle_post(http_request request)
 	}
 }
 
+void load_config() {
+	try {
+		string_t        importFile = L"config.json";		            // extract filename
+		ifstream_t      f(importFile);                              // filestream of working file
+		stringstream_t  s;                                          // string stream for holding JSON read from file
+
+		if (f) {
+			s << f.rdbuf();                                         // stream results of reading from file stream into string stream
+			f.close();                                              // close the filestream
+
+			config = json::value::parse(s);                                   // parse the resultant string stream.
+			
+			wcout << L"STARTING WITH CONFIG:";
+			display_field_map_json(config);
+		}
+	}
+	catch (web::json::json_exception excep) {
+		std::cout << "ERROR Parsing JSON: ";
+		std::cout << excep.what();
+	}
+
+}
+
 
 int main()
 {
-	http_listener listener(L"http://localhost:8181/");
+	
+	load_config();
 
-	listener.support(methods::GET, handle_get);
-	listener.support(methods::POST, handle_post);
+	auto const & config_obj = config.as_object();
+	string_t t = config_obj.at(L"host").as_string();
+
+	wcout << config_obj.at(L"host");
+
+	try
+	{
+
+		http_listener listener((config_obj.at(L"host").as_string()));
+
+
+		listener.support(methods::GET, handle_get);
+		listener.support(methods::POST, handle_post);
 
 
 		listener
@@ -152,6 +191,16 @@ int main()
 			.wait();
 
 		while (true);
+	}
+	catch (exception const & e)
+	{
+		wcout << e.what() << endl;
+	}
+	
+
+
+
+
 	
 
 	return 0;
